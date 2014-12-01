@@ -26,11 +26,11 @@ public class RoutingTable {
 	}
 	
 	public void addToDvMap(DistanceVector dv) {
-		dvMap.put(dv.getDest().produceKey(), dv);
+		dvMap.put(dv.getDest().toKey(), dv);
 	}
 	
 	public void addToNeighbours(Client c) {
-		neighbours.put(c.produceKey(), c);
+		neighbours.put(c.toKey(), c);
 	}
 	
 	public void printRoutingTable() {
@@ -49,12 +49,19 @@ public class RoutingTable {
 	
 	public void sendRouteUpdate() {
 		for (Client neighbour: neighbours.values()) {
-			Packet pkt = new Packet(neighbour, dvMap);
-			pkt.packPkt();
-			byte[] pkt_bytes = pkt.getPkt_bytes();			
-			DatagramPacket udp_pkt = new DatagramPacket(pkt_bytes, Array.getLength(pkt_bytes),
-												neighbour.getIp(), neighbour.getPort());
+			dbg(neighbour.toKey());
 			
+			if (!neighbour.isLinkOn())
+				continue;
+			
+			Packet pkt = new Packet(neighbour, dvMap, Packet.UPDATE);
+//			pkt.packPkt();
+			byte[] pkt_bytes = Packet.packPkt(pkt);		
+			DatagramPacket udp_pkt = new DatagramPacket(pkt_bytes, Array.getLength(pkt_bytes),
+							neighbour.getIp(), neighbour.getPort());
+			
+			dbg("send to " + neighbour.toKey());
+
 			try {
 				sock.send(udp_pkt);
 			} catch (IOException e) {
@@ -63,10 +70,10 @@ public class RoutingTable {
 		}	
 	}
 	
-	private void sendLinkDown(Client c) {
-		Packet pkt = new Packet(c, dvMap);
-		pkt.packPkt();
-		byte[] pkt_bytes = pkt.getPkt_bytes();		
+	public void sendLinkDown(Client c) {
+		Packet pkt = new Packet(c, null, Packet.LINKDOWN);
+//		pkt.packPkt();
+		byte[] pkt_bytes = Packet.packPkt(pkt);		
 		DatagramPacket udp_pkt = new DatagramPacket(pkt_bytes, Array.getLength(pkt_bytes),
 											c.getIp(), c.getPort());
 		try {
@@ -76,37 +83,32 @@ public class RoutingTable {
 		}
 	}
 	
-	public void updateDv(DistanceVector dv) {
-		
+	public void updateDv(DistanceVector new_link_dv) {
+		Client dest = new_link_dv.getDest();
+		DistanceVector old_link_dv = dvMap.get(dest.toKey());
+		if (new_link_dv.getCost() == INFINITE && 
+				Client.compare(old_link_dv.getLink(), dest)) {
+			
+			dvMap.put(dest.toKey(), new DistanceVector(dest, dest, INFINITE));
+			sendRouteUpdate();
+			dbg("updateDv");
+		}
 	}
 	
 	public void updateRt(HashMap<String, DistanceVector> dvMap_rcvd, Client sender) {
 		//update dv with the sender first
-		DistanceVector old_link_dv = dvMap.get(sender.produceKey());
-		DistanceVector new_link_dv = dvMap_rcvd.get(currClient.produceKey());
+		DistanceVector old_link_dv = dvMap.get(sender.toKey());
+		DistanceVector new_link_dv = dvMap_rcvd.get(currClient.toKey());
 		
 		dbg("update rt");
 		
-		if (new_link_dv.getCost() != INFINITE)
-			dbg("!=infinite");
-		
-		if (!Client.compare(old_link_dv.getLink(), sender))
-			dbg("compare");
-		
-		if (new_link_dv.getCost() == INFINITE && 
-				Client.compare(old_link_dv.getLink(), sender)) {
-			
-			dvMap.put(sender.produceKey(), new DistanceVector(sender, sender, INFINITE));
-			neighbours.remove(sender.produceKey());
-			dbg("link down");
-			return;
-		} else if (new_link_dv.getCost() < old_link_dv.getCost()) {
+		if (new_link_dv.getCost() < old_link_dv.getCost()) {
 			new_link_dv.setDest(sender);
 			if (new_link_dv.getLink().equals(currClient)) {
 				new_link_dv.setLink(sender);
 			} 
 			
-			dvMap.put(sender.produceKey(), new_link_dv);
+			dvMap.put(sender.toKey(), new_link_dv);
 		}
 		
 		for (DistanceVector dv: dvMap_rcvd.values()) {
@@ -116,7 +118,7 @@ public class RoutingTable {
 			if (Client.compare(dest, currClient)) {
 				continue;
 			}
-			new_cost = dvMap.get(sender.produceKey()).getCost() + dv.getCost();
+			new_cost = dvMap.get(sender.toKey()).getCost() + dv.getCost();
 			dv.setCost(new_cost);
 			dv.setLink(sender);
 			
@@ -133,20 +135,31 @@ public class RoutingTable {
 
 	public void handleLinkDown(Client c) {
 		
-		neighbours.remove(c.produceKey());
+		neighbours.get(c.toKey()).setLinkOn(false);
 		
+		//update own rt
 		DistanceVector new_link_dv = new DistanceVector(c, c, INFINITE);
-		DistanceVector old_link_dv = dvMap.get(c.produceKey());
-		
-		if (new_link_dv.getCost() == INFINITE && 
-				Client.compare(old_link_dv.getLink(), c)) {
-			
-			dvMap.put(c.produceKey(), new_link_dv);
-			sendRouteUpdate();
+		updateDv(new_link_dv);
+	}
+	
+	public boolean handleLinkUp(Client c) {
+		if (!neighbours.containsKey(c.toKey()) ||
+				neighbours.get(c.toKey()).isLinkOn()) {
+			return false;
 		}
 		
+		neighbours.get(c.toKey()).setLinkOn(true);
 		sendLinkDown(c);
-
+		
+		DistanceVector new_link_dv = new DistanceVector(c, c, c.getWeight());
+		DistanceVector old_link_dv = dvMap.get(c.toKey());
+		
+		if (new_link_dv.getCost() < old_link_dv.getCost()) {
+		
+			dvMap.put(c.toKey(), new_link_dv);
+			sendRouteUpdate();
+		}		
+		return true;
 	}
 
 }

@@ -38,7 +38,9 @@ public class BFClient {
 				int port = Integer.parseInt(args[3 + i*3]);
 				float weight = Float.parseFloat(args[4 + i*3]);
 				Client neighbour = new Client(InetAddress.getByName(ip), port);
-				
+				neighbour.setLinkOn(true);
+				neighbour.setNeighbour(true);
+				neighbour.setWeight(weight);
 				rt.addToDvMap(new DistanceVector(neighbour, neighbour, weight));
 				rt.addToNeighbours(neighbour);
 			}
@@ -66,8 +68,7 @@ public class BFClient {
 					InetAddress ip = InetAddress.getByName(st.nextToken());
 					if (!st.hasMoreTokens()) { dbg("Invalid command"); continue; }
 					int port = Integer.parseInt(st.nextToken());
-					//TODO linkup()
-					
+					linkup(new Client(ip, port));
 				} else if (token.equals("SHOWRT")) {
 					
 					if (st.hasMoreTokens()) { dbg("Invalid command"); continue; }
@@ -94,9 +95,24 @@ public class BFClient {
 		
 	}
 
-	private void linkdown(Client client) {
+	private void linkup(Client client) {
 		synchronized (rt) {
-			rt.handleLinkDown(client);
+			boolean ret = rt.handleLinkUp(client);
+			if(!ret) {
+				dbg("Invalid link");
+			}
+		}
+	}
+
+	private void linkdown(Client c) {
+		synchronized (rt) {
+			if (!rt.neighbours.containsKey(c.toKey()) ||
+					rt.neighbours.get(c.toKey()).isLinkOn()) {
+				dbg("Invalid link");
+			}
+			
+			rt.handleLinkDown(c);
+			rt.sendLinkDown(c);
 		}
 	}
 
@@ -123,16 +139,34 @@ public class BFClient {
 			while (true) {
 				try {
 					sock.receive(udp_pkt);
-					dbg("receive msg");
-					Packet pkt = new Packet();
-					pkt.setPkt_bytes(udp_pkt.getData());
-					pkt.unpackPkt();
-					HashMap<String, DistanceVector> dvMap_rcvd = pkt.getDvMap();
 					Client sender = new Client(udp_pkt.getAddress(), udp_pkt.getPort());
+					dbg("receive msg");
+					
+//					byte[] pkt_bytes = new byte[udp_pkt.getLength()];
+//					System.arraycopy(udp_pkt.getData(), 0, pkt_bytes, 0, udp_pkt.getLength());
+					
+					Packet pkt = Packet.unpackPkt(udp_pkt.getData());					
 					
 					synchronized (rt) {
-						rt.updateRt(dvMap_rcvd, sender);
+						switch (pkt.getMsg_type()) {
+						case Packet.UPDATE:
+							HashMap<String, DistanceVector> dvMap_rcvd = pkt.getDvMap();
+							rt.updateRt(dvMap_rcvd, sender);
+							break;
+							
+						case Packet.LINKDOWN:
+							rt.handleLinkDown(sender);
+							break;
+							
+						case Packet.LINKUP:
+							
+							break;
+
+						default:
+							break;
+						}
 					}
+					
 					
 				} catch (IOException e) {
 					e.printStackTrace();
