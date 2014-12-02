@@ -4,8 +4,6 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
-import java.lang.reflect.Array;
-import java.nio.ByteBuffer;
 import java.util.HashMap;
 
 
@@ -16,7 +14,6 @@ public class Packet implements Serializable {
 	
 	private Client destClient;
 	private HashMap<String, DistanceVector> dvMap;
-	// private byte[] pkt_bytes;
 	private int msg_type;
 	
 	public Packet(Client destClient, HashMap<String, DistanceVector> dvMap, int type) {
@@ -31,22 +28,6 @@ public class Packet implements Serializable {
 	
 	@SuppressWarnings("finally")
 	public static byte[] packPkt(Packet pkt) {
-//		try {
-//			if (dvMap != null) {
-//				byte[] tmpMap = serialize(dvMap);
-//				pkt_bytes = new byte[Array.getLength(tmpMap) + 4];
-//				byte[] tmpType = ByteBuffer.allocate(4).putInt(msg_type).array();
-//				System.arraycopy(tmpType, 0, pkt_bytes, 0, 4);
-//				System.arraycopy(tmpMap, 0, pkt_bytes, 4, Array.getLength(tmpType));
-//				System.out.println("in pack, pkt_bytes length=" + Array.getLength(pkt_bytes));
-//			} else {
-//				pkt_bytes = new byte[4];
-//				byte[] tmp = ByteBuffer.allocate(4).putInt(msg_type).array();
-//				System.arraycopy(tmp, 0, pkt_bytes, 0, 4);
-//			}
-//		} catch (IOException e) {
-//			e.printStackTrace();
-//		}
 		byte[] pkt_bytes = null;
 		try {
 			pkt_bytes = serialize(pkt);
@@ -59,35 +40,12 @@ public class Packet implements Serializable {
 	
 	@SuppressWarnings("finally")
 	public static Packet unpackPkt(byte[] pkt_bytes) {
-//		try {
-//			System.out.println("in unpack, pkt_bytes len=" + Array.getLength(pkt_bytes));
-//			byte[] tmpType = new byte[4];
-//			
-//			System.arraycopy(pkt_bytes, 0, tmpType, 0, 4);
-//			ByteBuffer buf = ByteBuffer.wrap(tmpType);
-//			msg_type = buf.getInt();
-//			
-//			if (msg_type == UPDATE) {
-//				System.out.println("in unpack, =update");
-//				byte[] tmp2 = new byte[Array.getLength(pkt_bytes)-4];
-//				System.arraycopy(pkt_bytes, 4, tmp2, 0, Array.getLength(tmp2));
-//				
-//				dvMap = (HashMap<String, DistanceVector>) deserialize(tmp2);
-//			}
-//			
-//		} catch (IOException e) {
-//			e.printStackTrace();
-//		} catch (ClassNotFoundException e) {
-//			e.printStackTrace();
-//		}
 		Packet pkt = null;
 		try {
 			pkt = (Packet) deserialize(pkt_bytes);
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} catch (ClassNotFoundException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} finally {
 			return pkt;
@@ -105,14 +63,6 @@ public class Packet implements Serializable {
 	public void setDestClient(Client destClient) {
 		this.destClient = destClient;
 	}
-
-	// public byte[] getPkt_bytes() {
-	// 	return pkt_bytes;
-	// }
-
-	// public void setPkt_bytes(byte[] pkt_bytes) {
-	// 	this.pkt_bytes = pkt_bytes;
-	// }
 
 	public int getMsg_type() {
 		return msg_type;
