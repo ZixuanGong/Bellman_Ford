@@ -107,14 +107,12 @@ public class RoutingTable {
 				//dest is curr node
 				DistanceVector new_link_dv = dvMap_rcvd.get(currClient.toKey());
 				DistanceVector old_link_dv = dvMap.get(sender.toKey());
-				//if Me-Midpoint > Midpoint-Me and neighbours, update Me-Midpoint
 				float old_cost = old_link_dv.getCost();
 				float new_cost = new_link_dv.getCost();
 				//link restored
 				if (old_cost > new_cost && Client.compare(new_link_dv.getLink(), currClient)) {
 					old_link_dv.setCost(new_cost);
 					old_link_dv.setLink(sender);
-					dbg("dv to " + dest.toKey() + "->" + new_cost);
 					updated = true;
 				}
 
@@ -126,27 +124,25 @@ public class RoutingTable {
 				float tempdist = client_to_mp + mp_to_mpdest;
 
 				if (client_to_dest > tempdist) {
-					//client - midpoint - dest
+
 					m_dv.setLink(sender);
 					m_dv.setCost(tempdist);
-					dbg(sender.toKey() + "isLinkOn:" + sender.isLinkOn());
-					dbg(1 + sender.toKey() + ": dv to " + dest.toKey() + "->" + tempdist);
 					updated = true;
+
 				} else if (m_dv.getCost() == INFINITE) {
 
 				} else if (Client.compare(m_dv.getLink(), sender)) {
-
 					if (tempdist > INFINITE) {
+						
+
 						//if dest is neighbour
 						if (neighbours.containsKey(dest.toKey())) {
 							Client neighbour = neighbours.get(dest.toKey());
 							m_dv.setLink(neighbour);
 							m_dv.setCost(neighbour.getWeight());
-							dbg(2 + sender.toKey() + ": dv to " + dest.toKey() + "->" + m_dv.getCost());
 						} else {
 							m_dv.setLink(null);
 							m_dv.setCost(INFINITE);
-							dbg(3 + sender.toKey() + ": dv to " + dest.toKey() + "->" + INFINITE);
 						}
 					} else {
 						m_dv.setCost(tempdist);
@@ -172,7 +168,6 @@ public class RoutingTable {
 
 	public void handleLinkDown(Client c) {
 		c.setLinkOn(false);
-		dbg(c.toKey() + " isLinkOn:" + neighbours.get(c.toKey()).isLinkOn());
 		
 		//update own rt
 		DistanceVector me2c = dvMap.get(c.toKey());
@@ -193,7 +188,6 @@ public class RoutingTable {
 					if (dest.getWeight() < INFINITE)
 						dv.setLink(dest);
 
-					dbg("handleLinkDown: Cost to "+dest.toKey() + " -> " + dest.getWeight());
 					sendRouteUpdate();
 				}
 			}
@@ -205,12 +199,11 @@ public class RoutingTable {
 		c.setLinkOn(true);
 		
 		DistanceVector me2c = dvMap.get(c.toKey());
-		dbg("handleLinkUp: " + c.toKey() + " weight=" + c.getWeight());
 		if (c.getWeight() < me2c.getCost()) {
+
 			me2c.setCost(c.getWeight());
 			me2c.setLink(c);
 			
-			dbg("linkup: Cost to " + c.toKey() + " -> " + c.getWeight());
 			sendRouteUpdate();
 		}	
 	}
