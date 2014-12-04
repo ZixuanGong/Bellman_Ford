@@ -54,7 +54,7 @@ public class RoutingTable {
 		for (Client neighbour: neighbours.values()) {			
 			if (!neighbour.isLinkOn())
 				continue;
-			
+
 			Packet pkt = new Packet(neighbour, dvMap, Packet.UPDATE);
 			byte[] pkt_bytes = Packet.packPkt(pkt);		
 			DatagramPacket udp_pkt = new DatagramPacket(pkt_bytes, Array.getLength(pkt_bytes),
@@ -80,52 +80,44 @@ public class RoutingTable {
 		}
 	}
 	
-	public void updateDv(DistanceVector new_link_dv) {
-		Client dest = new_link_dv.getDest();
-		DistanceVector old_link_dv = dvMap.get(dest.toKey());
-		if (new_link_dv.getCost() == INFINITE && 
-				Client.compare(old_link_dv.getLink(), old_link_dv.getDest())) {
-			
-			addToDvMap(new_link_dv);
-
-			for(DistanceVector dv: dvMap.values()){ 
-				if (Client.compare(dv.getLink(), dest)) 
-					dv.setCost(INFINITE);
-			}
-			sendRouteUpdate();
-			dbg("updateDv: linkdown");
-		} else if (new_link_dv.getCost() < old_link_dv.getCost()) {
-		
-			addToDvMap(new_link_dv);
-			sendRouteUpdate();
-			dbg("updateDv: linkup");
-		}	
-	}
-	
 	public void updateRt(HashMap<String, DistanceVector> dvMap_rcvd, Client sender) {
 		boolean updated = false;
 
-		float client_to_mp = dvMap.get(sender.toKey()).getCost();
+		float client_to_mp = sender.getWeight();
 		//for each dest in rcvd rt
 		for(DistanceVector s_dv: dvMap_rcvd.values()){
 			float mp_to_mpdest = s_dv.getCost();
 			Client dest = s_dv.getDest();
 
+			if (neighbours.containsKey(dest.toKey()))
+				if (neighbours.get(dest.toKey()).isDead())
+					continue;
+
+			if (s_dv.getLink() != null) {
+				Client link = s_dv.getLink();
+				if (neighbours.containsKey(link.toKey()))
+					if (neighbours.get(link.toKey()).isDead())
+						continue;
+
+				if (Client.compare(s_dv.getLink(), currClient))
+					continue;
+			}
+
 			if (Client.compare(dest, currClient)) {
 				//dest is curr node
 				DistanceVector new_link_dv = dvMap_rcvd.get(currClient.toKey());
 				DistanceVector old_link_dv = dvMap.get(sender.toKey());
-				//if Me-Midpoint > Midpoint-Me and neighbors, update Me-Midpoint
-				float me_mp = old_link_dv.getCost();
-				float mp_me = new_link_dv.getCost();
-				//link restored?
-				if (me_mp > mp_me && Client.compare(new_link_dv.getLink(), currClient)) {
-					old_link_dv.setCost(new_link_dv.getCost());
+				//if Me-Midpoint > Midpoint-Me and neighbours, update Me-Midpoint
+				float old_cost = old_link_dv.getCost();
+				float new_cost = new_link_dv.getCost();
+				//link restored
+				if (old_cost > new_cost && Client.compare(new_link_dv.getLink(), currClient)) {
+					old_link_dv.setCost(new_cost);
 					old_link_dv.setLink(sender);
-					
-					addToDvMap(old_link_dv);
+					dbg("dv to " + dest.toKey() + "->" + new_cost);
 					updated = true;
 				}
+
 			}
 			//compare with my dv -- if an entry exists
 			else if (dvMap.containsKey(dest.toKey())) {
@@ -133,47 +125,94 @@ public class RoutingTable {
 				float client_to_dest = m_dv.getCost();
 				float tempdist = client_to_mp + mp_to_mpdest;
 
-				if(client_to_dest > tempdist) {
+				if (client_to_dest > tempdist) {
 					//client - midpoint - dest
 					m_dv.setLink(sender);
 					m_dv.setCost(tempdist);
-					addToDvMap(m_dv);
+					dbg(sender.toKey() + "isLinkOn:" + sender.isLinkOn());
+					dbg(1 + sender.toKey() + ": dv to " + dest.toKey() + "->" + tempdist);
 					updated = true;
-				}
-				if (Client.compare(m_dv.getLink(), sender) && 
-						!Client.compare(m_dv.getLink(), s_dv.getLink())) {
-						if(tempdist > INFINITE)
-							tempdist = INFINITE;
+				} else if (m_dv.getCost() == INFINITE) {
 
-						//client - midpoint - dest
-						m_dv.setLink(sender);
+				} else if (Client.compare(m_dv.getLink(), sender)) {
+
+					if (tempdist > INFINITE) {
+						//if dest is neighbour
+						if (neighbours.containsKey(dest.toKey())) {
+							Client neighbour = neighbours.get(dest.toKey());
+							m_dv.setLink(neighbour);
+							m_dv.setCost(neighbour.getWeight());
+							dbg(2 + sender.toKey() + ": dv to " + dest.toKey() + "->" + m_dv.getCost());
+						} else {
+							m_dv.setLink(null);
+							m_dv.setCost(INFINITE);
+							dbg(3 + sender.toKey() + ": dv to " + dest.toKey() + "->" + INFINITE);
+						}
+					} else {
 						m_dv.setCost(tempdist);
-						addToDvMap(m_dv);
+					}
+					updated = true;
+					
 				}
+
+			//new entry
 			} else {
 				float client_to_dest = client_to_mp + mp_to_mpdest;
-				DistanceVector new_dv = new DistanceVector(dest, sender, client_to_dest);
+				Client new_client = new Client(dest.getIp(), dest.getPort());
+				DistanceVector new_dv = new DistanceVector(new_client, sender, client_to_dest);
 				addToDvMap(new_dv);
+				updated = true;
 			}
 		}
 
-		if (updated)
+		if (updated) {
 			sendRouteUpdate();
+		}
 	}
 
 	public void handleLinkDown(Client c) {
-		neighbours.get(c.toKey()).setLinkOn(false);
+		c.setLinkOn(false);
+		dbg(c.toKey() + " isLinkOn:" + neighbours.get(c.toKey()).isLinkOn());
 		
 		//update own rt
-		DistanceVector new_link_dv = new DistanceVector(c, c, INFINITE);
-		updateDv(new_link_dv);
+		DistanceVector me2c = dvMap.get(c.toKey());
+		
+		//old dv is to go there directly
+		if (Client.compare(me2c.getLink(), me2c.getDest())) {
+
+			//update affected dv
+			for(DistanceVector dv: dvMap.values()){
+				Client dest = dv.getDest();
+				//if c was along the path to dest
+				if (dv.getLink() == null)
+					continue;
+
+				if (Client.compare(dv.getLink(), c)) {
+
+					dv.setCost(dest.getWeight());
+					if (dest.getWeight() < INFINITE)
+						dv.setLink(dest);
+
+					dbg("handleLinkDown: Cost to "+dest.toKey() + " -> " + dest.getWeight());
+					sendRouteUpdate();
+				}
+			}
+		}
+		
 	}
 	
 	public void handleLinkUp(Client c) {
-		neighbours.get(c.toKey()).setLinkOn(true);
+		c.setLinkOn(true);
 		
-		DistanceVector new_link_dv = new DistanceVector(c, c, neighbours.get(c.toKey()).getWeight());
-		updateDv(new_link_dv);
+		DistanceVector me2c = dvMap.get(c.toKey());
+		dbg("handleLinkUp: " + c.toKey() + " weight=" + c.getWeight());
+		if (c.getWeight() < me2c.getCost()) {
+			me2c.setCost(c.getWeight());
+			me2c.setLink(c);
+			
+			dbg("linkup: Cost to " + c.toKey() + " -> " + c.getWeight());
+			sendRouteUpdate();
+		}	
 	}
 
 }

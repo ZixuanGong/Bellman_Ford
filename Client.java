@@ -17,7 +17,7 @@ public class Client implements Serializable{
 	}
 	
 	public String toKey() {
-		return ip.toString() + port;
+		return ip.toString() + ":" + port;
 	}
 	
 	
@@ -57,6 +57,14 @@ public class Client implements Serializable{
 
 	public void setWeight(float weight) {
 		this.weight = weight;
+	}
+
+	public boolean isDead() {
+		return dead;
+	}
+
+	public void setDead(boolean dead) {
+		this.dead = dead;
 	}
 	
 	

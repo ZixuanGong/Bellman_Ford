@@ -37,6 +37,15 @@ public class DistanceVector implements Serializable{
 		this.cost = cost;
 	}
 
+	public String toString() {
+		String dv = "";
+		if (link != null)
+			dv += link.toKey() + " ";
+
+		dv += cost;
+		return dv;
+	}
+
 	
 	
 	

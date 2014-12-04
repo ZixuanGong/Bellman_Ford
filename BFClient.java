@@ -49,9 +49,11 @@ public class BFClient implements ActionListener{
 				neighbour.setWeight(weight);
 				rt.addToDvMap(new DistanceVector(neighbour, neighbour, weight));
 				rt.addToNeighbours(neighbour);
+				rt.sendLinkMsg(neighbour, Packet.LINKUP);
 			}
 			
-			new ListenThread(sock).start();
+			ListenThread listenThread = new ListenThread(sock);
+			listenThread.start();
 			
 			BufferedReader stdIn = new BufferedReader(new InputStreamReader(System.in));
 			while (true) {
@@ -83,7 +85,12 @@ public class BFClient implements ActionListener{
 				} else if (token.equals("CLOSE")) {
 					
 					if (st.hasMoreTokens()) { dbg("Invalid command"); continue; }
+					for (Client c: rt.neighbours.values())
+						rt.sendLinkMsg(c, Packet.DEAD);
+
+					listenThread.stop();
 					sock.close();
+					
 					timer.stop();
 					System.exit(0);
 				} else if (token.equals("SEND")) {
@@ -96,9 +103,8 @@ public class BFClient implements ActionListener{
 			dbg("Error: Invalid Arguments");
 			System.exit(-1);
 		} catch (UnknownHostException e) {
-			e.printStackTrace();
+			dbg("Wrong localport");
 		} catch (IOException e) {
-			e.printStackTrace();
 		}
 		
 	}
@@ -107,11 +113,15 @@ public class BFClient implements ActionListener{
 		synchronized (rt) {
 			if (!rt.neighbours.containsKey(c.toKey())) {
 				dbg("Invalid link: not a neighbour");
-			} else if (rt.neighbours.get(c.toKey()).isLinkOn()) {
+				return;
+			} 
+
+			Client neighbour = rt.neighbours.get(c.toKey());
+			if (neighbour.isLinkOn()) {
 				dbg("Invalid link: link is already on");
 			} else {
-				rt.handleLinkUp(c);
-				rt.sendLinkMsg(c, Packet.LINKUP);
+				rt.handleLinkUp(neighbour);
+				rt.sendLinkMsg(neighbour, Packet.LINKUP);
 			}
 		}
 	}
@@ -120,11 +130,16 @@ public class BFClient implements ActionListener{
 		synchronized (rt) {
 			if (!rt.neighbours.containsKey(c.toKey())) {
 				dbg("Invalid link: not a neighbour");
-			} else if (!rt.neighbours.get(c.toKey()).isLinkOn()) {
+				return;
+			}
+
+			Client neighbour = rt.neighbours.get(c.toKey());
+
+			if (!neighbour.isLinkOn()) {
 				dbg("Invalid link: link already destroyed");
 			} else {
-				rt.handleLinkDown(c);
-				rt.sendLinkMsg(c, Packet.LINKDOWN);
+				rt.handleLinkDown(neighbour);
+				rt.sendLinkMsg(neighbour, Packet.LINKDOWN);
 			}
 		}
 	}
@@ -153,30 +168,33 @@ public class BFClient implements ActionListener{
 				try {
 					sock.receive(udp_pkt);
 					Client c = new Client(udp_pkt.getAddress(), udp_pkt.getPort());
-					Client sender = rt.neighbours.get(c.toKey());
-					sender.setLinkOn(true);
-					sender.setTimestamp(System.currentTimeMillis());
-					
 					Packet pkt = Packet.unpackPkt(udp_pkt.getData());					
 					
 					synchronized (rt) {
+						Client sender = rt.neighbours.get(c.toKey());
+						sender.setDead(false);
+						sender.setTimestamp(System.currentTimeMillis());
+
 						switch (pkt.getMsg_type()) {
 						case Packet.UPDATE:
-							dbg("receive UPDATE msg from " + sender.toKey());
 							HashMap<String, DistanceVector> dvMap_rcvd = pkt.getDvMap();
 							rt.updateRt(dvMap_rcvd, sender);
 							break;
 							
 						case Packet.LINKDOWN:
-							dbg("receive LINKDOWN msg from " + sender.toKey());
+							dbg(sender.toKey() + "-" + currClient.toKey() + " linkdown");
 							rt.handleLinkDown(sender);
 							break;
 							
 						case Packet.LINKUP:
-							dbg("receive LINKUP msg from " + sender.toKey());
+							dbg(sender.toKey() + "-" + currClient.toKey() + " linkdown");
 							rt.handleLinkUp(sender);
 							break;
 
+						case Packet.DEAD:
+							dbg(sender.toKey() + "is dead");
+							sender.setDead(true);
+							break;
 						default:
 							break;
 						}
@@ -184,7 +202,7 @@ public class BFClient implements ActionListener{
 					
 					
 				} catch (IOException e) {
-					e.printStackTrace();
+					
 				}
 			}
 		}
@@ -194,17 +212,19 @@ public class BFClient implements ActionListener{
 	@Override
 	public void actionPerformed(ActionEvent e) {
 		try{
-			rt.sendRouteUpdate();
 			timer.restart();
+			synchronized(rt) {
+				rt.sendRouteUpdate();
+				for(Client c: rt.neighbours.values()){
+					if (!c.isLinkOn())
+						continue;
 
-			for(Client c: rt.neighbours.values()){
-				if (!c.isLinkOn())
-					continue;
-
-				if ((c.getTimestamp() + 3 * timeout < System.currentTimeMillis())){
-					rt.handleLinkDown(c);
+					if ((c.getTimestamp() + 3 * timeout < System.currentTimeMillis())){
+						rt.handleLinkDown(c);
+					}
 				}
 			}
+			
 
 		}catch(Exception exception){
 			exception.printStackTrace();

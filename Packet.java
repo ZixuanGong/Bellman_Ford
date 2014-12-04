@@ -11,6 +11,7 @@ public class Packet implements Serializable {
 	public static final int LINKDOWN = 1;
 	public static final int LINKUP = 2;
 	public static final int UPDATE = 3;
+	public static final int DEAD = 4;
 	
 	private Client destClient;
 	private HashMap<String, DistanceVector> dvMap;
