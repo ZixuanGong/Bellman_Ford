@@ -14,16 +14,18 @@ import java.util.HashMap;
 import java.util.StringTokenizer;
 import javax.swing.Timer;
 
-public class BFClient implements ActionListener{
+public class bfclient implements ActionListener{
 	RoutingTable rt;
 	Client currClient;
 	int timeout;
 	Timer timer;
+	DatagramSocket sock;
+	ListenThread listenThread;
 	private long now;
 	private static final int MAX_DATAGRAM_LEN = 65507;
 	private static final float INFINITE = 99999;
 	
-	public BFClient(String[] args) {
+	public bfclient(String[] args) {
 		int argc = Array.getLength(args);
 		if (argc % 3 != 2 || argc < 5) {
 			dbg("Error: Invalid number of argument");
@@ -36,7 +38,7 @@ public class BFClient implements ActionListener{
 			timer = new Timer (timeout, this);
 			timer.start ();
 			
-			DatagramSocket sock = new DatagramSocket(listen_port);
+			sock = new DatagramSocket(listen_port);
 			currClient = new Client(InetAddress.getByName("127.0.0.1"), listen_port);
 			rt = new RoutingTable(currClient, sock);
 
@@ -52,8 +54,14 @@ public class BFClient implements ActionListener{
 				rt.sendLinkMsg(neighbour, Packet.LINKUP);
 			}
 			
-			ListenThread listenThread = new ListenThread(sock);
+			listenThread = new ListenThread(sock);
 			listenThread.start();
+
+			Runtime.getRuntime().addShutdownHook(new Thread() {
+				    public void run() {
+				    	progClose();
+				    }
+			});
 			
 			BufferedReader stdIn = new BufferedReader(new InputStreamReader(System.in));
 			while (true) {
@@ -85,14 +93,9 @@ public class BFClient implements ActionListener{
 				} else if (token.equals("CLOSE")) {
 					
 					if (st.hasMoreTokens()) { dbg("Invalid command"); continue; }
-					for (Client c: rt.neighbours.values())
-						rt.sendLinkMsg(c, Packet.DEAD);
-
-					listenThread.stop();
-					sock.close();
-					
-					timer.stop();
+					progClose();
 					System.exit(0);
+
 				} else if (token.equals("SEND")) {
 					synchronized (rt) {
 						rt.sendRouteUpdate();
@@ -107,6 +110,16 @@ public class BFClient implements ActionListener{
 		} catch (IOException e) {
 		}
 		
+	}
+
+	private void progClose() {
+		for (Client c: rt.neighbours.values())
+			rt.sendLinkMsg(c, Packet.DEAD);
+
+		listenThread.stop();
+		sock.close();
+		
+		timer.stop();
 	}
 
 	private void linkup(Client c) {
@@ -145,7 +158,7 @@ public class BFClient implements ActionListener{
 	}
 
 	public static void main(String[] args) {
-		new BFClient(args);
+		new bfclient(args);
 		
 	}
 
